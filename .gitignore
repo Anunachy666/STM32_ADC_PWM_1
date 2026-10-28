@@ -1,3 +1,4 @@
 *.bak
 *.map
 UES_ADC_PWM_Proj_1.*
+BLUE_PILL-STM32F103_1/*
