@@ -1,0 +1,5 @@
+load STM32F417ZGTx
+project name STM32CubeMX
+project toolchain "MDK-ARM V5"
+project path "D:\PROJECTS\ARM\STM_ADC+PWM_1\SK-STM32F217_417_1D\"
+SetCopyLibrary "copy only"
