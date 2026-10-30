@@ -126,7 +126,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
   }
 }
 //------------------------------------------------------------------------------
-
+// Обоснование в комментариях main.h
 static int AdcBuffSumm(const uint16_t *Buff, int Count, uint16_t ErrTreshold, uint32_t *Summ, uint32_t *SummRef)
 {
   int ret = 0, Avg;
