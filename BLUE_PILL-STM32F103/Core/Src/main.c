@@ -266,22 +266,21 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim1);
   HAL_TIM_Base_Start_IT(&htim3);
 
- 
+  Sleep(150);
+  status = HAL_ADC_Start_DMA(&hadc1, (uint32_t*)AdcDblBuff[AdcBuffConvCntr & 0x1],
+                             CONV_FRAME_COUNT*CHANNEL_COUNT);
+  if(HAL_OK != status) {
+    LOG_ERROR("%s :: HAL_ADC_Start_DMA -fail, status = %d\r\n", __func__, (int)status);
+  }
+
   __HAL_TIM_SetCompare(&htim1, PWM_TIM1_CHANNEL, 12000);
   status = HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-
-  Sleep(150);
 
   SetPwmOut(ADC_MAX);
   Sleep(150);
   SetPwmOut(0);
   Sleep(150);
 
-  status = HAL_ADC_Start_DMA(&hadc1, (uint32_t*)AdcDblBuff[AdcBuffConvCntr & 0x1],
-                             CONV_FRAME_COUNT*CHANNEL_COUNT);
-  if(HAL_OK != status) {
-    LOG_ERROR("%s :: HAL_ADC_Start_DMA -fail, status = %d\r\n", __func__, (int)status);
-  }
 
   OutDataNextTime = Get1mSTickCount() + OUT_VALUE_TIME_mS;
   /* USER CODE END 2 */
