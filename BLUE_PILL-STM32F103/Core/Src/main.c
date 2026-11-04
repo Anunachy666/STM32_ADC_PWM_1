@@ -50,10 +50,11 @@
 /* USER CODE BEGIN PV */
 volatile uint32_t AdcBuffConvCntr = 0;
 static uint16_t AdcDblBuff[2][CONV_FRAME_COUNT*CHANNEL_COUNT];
+static TickType_t AdcFrameNextTime = 0;
 static uint32_t AdcLastBuffSumm = 0;
 static uint32_t AdcLastRefSumm = 0;
 
-static bool fAdcReady = false;
+static bool fAdcReady = true, fAdcDataReady = false;
 
 static uint32_t OutAcc = 0;
 static uint32_t OutRefAcc = 0;
@@ -63,6 +64,7 @@ static TickType_t OutDataNextTime = 0;
 
 static TickType_t LedBlinkNextTime = 0;
 
+extern DMA_HandleTypeDef hdma_adc1;
 extern TIM_HandleTypeDef htim3;
 /* USER CODE END PV */
 
@@ -98,8 +100,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
             the HAL_TIM_PeriodElapsedCallback could be implemented in the user file
    */
   if(&htim1 == htim) {
-    TEST3ON();
-    TEST3OFF();
+    //TEST3ON();
+    //TEST3OFF();
   }
   if(&htim3 == htim) {
     TEST2ON();
@@ -119,14 +121,11 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     AdcBuffConvCntr++;
     fAdcReady = true;
     HAL_ADC_Stop_DMA(&hadc1);
-    // Запуск нового цикла считывания АЦП в активный буфер
-    HAL_ADC_Start_DMA(&hadc1, (uint32_t*)AdcDblBuff[AdcBuffConvCntr & 0x1],
-                      CONV_FRAME_COUNT*CHANNEL_COUNT);
     TEST3OFF();
   }
 }
 //------------------------------------------------------------------------------
-// Обоснование в комментариях main.h
+
 static int AdcBuffSumm(const uint16_t *Buff, int Count, uint16_t ErrTreshold, uint32_t *Summ, uint32_t *SummRef)
 {
   int ret = 0, Avg;
@@ -207,7 +206,7 @@ static inline void SetPwmOut(uint32_t Value) {
 
 }
 //------------------------------------------------------------------------------
-static inline HAL_StatusTypeDef OutTextVal(int AdcOutAvg, int AdcVrefAvg) {
+static HAL_StatusTypeDef OutTextVal(int AdcOutAvg, int AdcVrefAvg) {
   HAL_StatusTypeDef status;
 
   sprintf(OutTextBuf, "AdcVin = %d mV\r\n", (int)ADC2MV(AdcOutAvg));
@@ -258,7 +257,6 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
-  __watchdog_reset();
   memset(AdcDblBuff, 0, sizeof(AdcDblBuff));
 
   HAL_ADC_Stop_DMA(&hadc1);
@@ -267,23 +265,13 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim1);
   HAL_TIM_Base_Start_IT(&htim3);
 
-  Sleep(150);
-  status = HAL_ADC_Start_DMA(&hadc1, (uint32_t*)AdcDblBuff[AdcBuffConvCntr & 0x1],
-                             CONV_FRAME_COUNT*CHANNEL_COUNT);
-  if(HAL_OK != status) {
-    LOG_ERROR("%s :: HAL_ADC_Start_DMA -fail, status = %d\r\n", __func__, (int)status);
-  }
-
-  __HAL_TIM_SetCompare(&htim1, PWM_TIM1_CHANNEL, 12000);
+ 
+  //SetPwmOut(1000);
+  __HAL_TIM_SetCompare(&htim1, PWM_TIM1_CHANNEL, 1000);
   status = HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
-  SetPwmOut(ADC_MAX);
-  Sleep(150);
-  SetPwmOut(0);
   Sleep(150);
 
-
-  OutDataNextTime = Get1mSTickCount() + OUT_VALUE_TIME_mS;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -293,26 +281,20 @@ int main(void)
     __watchdog_reset();
 
     
-    if((fAdcReady))
+    if((fAdcReady)&&(Get1mSTickCount() >= AdcFrameNextTime))
     {
       TEST1ON();
+      AdcFrameNextTime = Get1mSTickCount() + CONV_FRAME_TIME_mS;
 
       fAdcReady = false;
 
-      // Пока заполняем активный буфер прпоизводится обработка полученного буфера
-
-      // Рассчитываем полную сумму по буферу
-      AdcBuffSumm(AdcDblBuff[(AdcBuffConvCntr & 0x1) ^ 0x1], CONV_FRAME_COUNT,
-                             ADC_MAX_ERR_THD, &AdcLastBuffSumm, &AdcLastRefSumm);
-      // Получаем среднеарифметическое по буферу, для округления добавляенм половину количества
-      uint32_t ValueAvg = (AdcLastBuffSumm + (CONV_FRAME_COUNT >> 1) + 1) / CONV_FRAME_COUNT;
-      uint32_t ValueRefAvg = (AdcLastRefSumm + (CONV_FRAME_COUNT >> 1) + 1) / CONV_FRAME_COUNT;
-
-      OutAcc += ValueAvg;
-      OutRefAcc += ValueRefAvg;
-
-      // Устанавливаем новое значение ШИМ
-      SetPwmOut(ValueAvg);
+      fAdcDataReady = true;
+     
+      status = HAL_ADC_Start_DMA(&hadc1, (uint32_t*)AdcDblBuff[AdcBuffConvCntr & 0x1],
+                                 CONV_FRAME_COUNT*CHANNEL_COUNT);
+      if(HAL_OK != status) {
+      	LOG_ERROR("%s :: HAL_ADC_Start_DMA -fail, status = %d\r\n", __func__, (int)status);
+      }
       TEST1OFF();
     }
     else 
@@ -329,6 +311,26 @@ int main(void)
         GLEDTGL();
       }
     }
+
+    if(fAdcDataReady)
+    {
+      fAdcDataReady = false;
+      // Обработика полученного буфера
+
+      // Рассчитываем полную сумму по буферу
+      AdcBuffSumm(AdcDblBuff[(AdcBuffConvCntr & 0x1) ^ 0x1], CONV_FRAME_COUNT,
+                             ADC_MAX_ERR_THD, &AdcLastBuffSumm, &AdcLastRefSumm);
+      // Получаем среднеарифметическое по буферу, для округления добавляенм половину количества
+      uint32_t ValueAvg = (AdcLastBuffSumm + (CONV_FRAME_COUNT >> 1) + 1) / CONV_FRAME_COUNT;
+      uint32_t ValueRefAvg = (AdcLastRefSumm + (CONV_FRAME_COUNT >> 1) + 1) / CONV_FRAME_COUNT;
+
+      OutAcc += ValueAvg;
+      OutRefAcc += ValueRefAvg;
+
+      // Устанавливаем новое значение ШИМ
+      SetPwmOut(ValueAvg);
+    }
+
 
     if(Get1mSTickCount() >= LedBlinkNextTime)
     {
