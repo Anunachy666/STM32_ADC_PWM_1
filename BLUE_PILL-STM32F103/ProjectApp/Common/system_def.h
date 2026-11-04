@@ -160,7 +160,8 @@ typedef struct
 
 //******************************************************************************
 //------------------------------------------------------------------------------
-typedef uint64_t	TickType_t;
+//typedef uint64_t	TickType_t;
+typedef uint32_t	TickType_t;
 //------------------------------------------------------------------------------
 //extern uint64_t Get1mSTickCount(void);
 #define	Get1mSTickCount	HAL_GetTick
